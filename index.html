@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<!-- 
+  Project: Matchday Photo Booth
+  Author / Creator: [Massimo Longo ALMAdigital]
+  All Rights Reserved © 2026
+-->
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Photo Booth Tifosi</title>
+    <style>
+        * { 
+            box-sizing: border-box; 
+            margin: 0; 
+            padding: 0; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+        }
+        
+        html, body {
+            width: 100%;
+            height: 100vh;
+            height: 100dvh;
+            overflow: hidden;
+            background: #0f172a;
+            color: #fff;
+        }
+
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+        }
+
+        header { 
+            text-align: center; 
+            width: 100%; 
+            max-width: 400px; 
+            flex: 0 0 auto; 
+            margin-bottom: 4px;
+        }
+        header h1 { 
+            font-size: 1.1rem; 
+            font-weight: 800; 
+            letter-spacing: 0.5px; 
+            text-transform: uppercase; 
+            color: #f8fafc; 
+        }
+        header p { 
+            font-size: 0.7rem; 
+            color: #94a3b8; 
+        }
+        
+        /* Contenitore flessibile dinamico 9:16 che si adatta esattamente all'altezza residua */
+        .booth-wrapper {
+            position: relative;
+            flex: 1 1 auto;
+            min-height: 0;
+            aspect-ratio: 9 / 16;
+            background: #000;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+            border: 2px solid #334155;
+            margin: 4px 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* 1. Il video sta sotto e riempie l'area con proporzione 9:16 */
+        video, canvas { 
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            height: 100%; 
+            object-fit: contain; /* <--- Mettendo contain anche al video, si adatterà esattamente alla stessa area della cornice */
+            background: #000;    /* Lo sfondo nero riempie eventuali micro-sbordature */
+        }
+        /* Gestione specchio fotocamera frontale */
+        video.flipped {
+            transform: scaleX(-1);
+        }
+
+        /* 2. La cornice PNG sta sopra ed è completamente visibile senza tagli */
+        .overlay-frame-img { 
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            height: 100%; 
+            object-fit: contain; 
+            pointer-events: none; 
+            z-index: 10; 
+            background: transparent !important;
+        }
+        
+        .preview-container { 
+            display: none; 
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            height: 100%; 
+            z-index: 20; 
+            background: #000; 
+        }
+        .preview-container img { 
+            width: 100%; 
+            height: 100%; 
+            object-fit: contain; 
+        }
+
+        .frames-selector { 
+            display: flex; 
+            gap: 8px; 
+            overflow-x: auto; 
+            width: 100%; 
+            max-width: 360px; 
+            flex: 0 0 auto; 
+            padding: 4px 0; 
+            scrollbar-width: none; 
+        }
+        .frames-selector::-webkit-scrollbar { display: none; }
+        .frame-thumb { 
+            flex: 0 0 50px; 
+            height: 72px; 
+            border-radius: 8px; 
+            border: 2px solid #475569; 
+            overflow: hidden; 
+            cursor: pointer; 
+            background: #1e293b; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            transition: all 0.2s; 
+        }
+        .frame-thumb img { width: 100%; height: 100%; object-fit: cover; }
+        .frame-thumb.active { border-color: #ef4444; transform: scale(1.05); }
+
+        .actions { 
+            display: flex; 
+            gap: 12px; 
+            width: 100%; 
+            max-width: 360px; 
+            flex: 0 0 auto; 
+            margin-top: 4px; 
+        }
+        button { 
+            flex: 1; 
+            padding: 12px; 
+            border: none; 
+            border-radius: 12px; 
+            font-size: 0.9rem; 
+            font-weight: 700; 
+            cursor: pointer; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            gap: 6px; 
+            transition: transform 0.1s; 
+        }
+        button:active { transform: scale(0.96); }
+        .btn-capture { background: #ef4444; color: white; box-shadow: 0 4px 14px rgba(239, 68, 68, 0.4); }
+        .btn-secondary { background: #334155; color: white; }
+        .btn-success { background: #22c55e; color: white; }
+
+        #countdown { 
+            display: none; 
+            position: absolute; 
+            top: 50%; 
+            left: 50%; 
+            transform: translate(-50%, -50%); 
+            font-size: 4.5rem; 
+            font-weight: 900; 
+            color: #fff; 
+            z-index: 15; 
+            text-shadow: 0 0 20px rgba(0,0,0,0.8); 
+        }
+        
+        .flash { 
+            position: absolute; 
+            top:0; 
+            left:0; 
+            width:100%; 
+            height:100%; 
+            background: #fff; 
+            z-index: 30; 
+            opacity: 0; 
+            pointer-events: none; 
+        }
+        @keyframes flashAnim { 0% { opacity: 1; } 100% { opacity: 0; } }
+        .trigger-flash { animation: flashAnim 0.5s ease-out; }
+
+        /* AGGIUNGI QUI IL FOOTER CSS */
+        .app-footer {
+            text-align: center;
+            font-size: 0.65rem;
+            color: #64748b;
+            margin-top: 6px;
+            flex: 0 0 auto;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Matchday Photo Booth</h1>
+        <p>Scatta, applica la cornice e condividi!</p>
+    </header>
+
+    <div class="booth-wrapper" id="boothWrapper">
+        <video id="webcam" autoplay playsinline muted></video>
+        <canvas id="canvas" style="display:none;"></canvas>
+        <div id="countdown">3</div>
+        <div class="flash" id="flashEffect"></div>
+        
+        <img id="activeOverlay" class="overlay-frame-img" src="" alt="Cornice">
+
+        <div class="preview-container" id="previewContainer">
+            <img id="resultImage" alt="Foto Scattata">
+        </div>
+    </div>
+
+    <div class="frames-selector" id="framesSelector">
+        <div class="frame-thumb active" onclick="setFrame(0)"><img src="Sfondo1.png" alt="Cornice 1"></div>
+        <div class="frame-thumb" onclick="setFrame(1)"><img src="Sfondo2.png" alt="Cornice 2"></div>
+        <div class="frame-thumb" onclick="setFrame(2)"><img src="Sfondo3.png" alt="Cornice 3"></div>
+        <div class="frame-thumb" onclick="setFrame(3)"><img src="Sfondo4.png" alt="Cornice 4"></div>
+        <div class="frame-thumb" onclick="setFrame(4)"><img src="SfondoNatale.png" alt="Cornice 5"></div>
+        <div class="frame-thumb" onclick="setFrame(5)"><img src="PromoApp.jpg" alt="Cornice 6"></div>
+    </div>
+
+    <div class="actions" id="cameraActions">
+        <button class="btn-secondary" onclick="switchCamera()">🔄 Gira</button>
+        <button class="btn-capture" onclick="startCountdown()">📸 Scatta</button>
+    </div>
+
+    <div class="actions" id="previewActions" style="display:none;">
+        <button class="btn-secondary" onclick="retakePhoto()">🔄 Riprova</button>
+        <button class="btn-success" id="shareBtn" onclick="shareOrSavePhoto()">📲 Condividi / Salva</button>
+    </div>
+
+    <!-- AGGIUNGI QUI IL FOOTER HTML -->
+    <div class="app-footer">
+        Powered by [Massimo Longo ALMAdigital] &bull; Tutti i diritti riservati
+    </div>
+
+    <script>
+        const frameSources = [
+            "Sfondo1.png",
+            "Sfondo2.png",
+            "Sfondo3.png",
+            "Sfondo4.png",
+            "SfondoNatale.png",
+            "PromoApp.jpg"
+        ];
+
+        const video = document.getElementById('webcam');
+        const activeOverlay = document.getElementById('activeOverlay');
+        const previewContainer = document.getElementById('previewContainer');
+        const resultImage = document.getElementById('resultImage');
+        const cameraActions = document.getElementById('cameraActions');
+        const previewActions = document.getElementById('previewActions');
+        const countdownEl = document.getElementById('countdown');
+        const flashEffect = document.getElementById('flashEffect');
+
+        let currentStream = null;
+        let useFrontCamera = true;
+        let selectedFrameIndex = 0;
+        let currentBlob = null;
+
+        activeOverlay.src = frameSources[0];
+
+        async function initCamera() {
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+            }
+            try {
+                const constraints = {
+                    video: { 
+                        facingMode: useFrontCamera ? 'user' : 'environment', 
+                        width: { ideal: 1280 }, 
+                        height: { ideal: 720 } 
+                    },
+                    audio: false
+                };
+                currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = currentStream;
+                if (useFrontCamera) {
+                    video.classList.add('flipped');
+                } else {
+                    video.classList.remove('flipped');
+                }
+            } catch (err) {
+                try {
+                    const fallbackConstraints = {
+                        video: { facingMode: useFrontCamera ? 'user' : 'environment' },
+                        audio: false
+                    };
+                    currentStream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
+                    video.srcObject = currentStream;
+                    if (useFrontCamera) {
+                        video.classList.add('flipped');
+                    } else {
+                        video.classList.remove('flipped');
+                    }
+                } catch (fallbackErr) {
+                    alert("Errore nell'accesso alla fotocamera. Assicurati di consentire i permessi.");
+                    console.error(fallbackErr);
+                }
+            }
+        }
+
+        function switchCamera() {
+            useFrontCamera = !useFrontCamera;
+            initCamera();
+        }
+
+        function setFrame(index) {
+            selectedFrameIndex = index;
+            activeOverlay.src = frameSources[index];
+            document.querySelectorAll('.frame-thumb').forEach((el, i) => {
+                if (i === index) el.classList.add('active');
+                else el.classList.remove('active');
+            });
+        }
+
+        function startCountdown() {
+            let count = 3;
+            countdownEl.style.display = 'block';
+            countdownEl.innerText = count;
+
+            let timer = setInterval(() => {
+                count--;
+                if (count > 0) {
+                    countdownEl.innerText = count;
+                } else {
+                    clearInterval(timer);
+                    countdownEl.style.display = 'none';
+                    takePhoto();
+                }
+            }, 1000);
+        }
+
+        function takePhoto() {
+            flashEffect.classList.add('trigger-flash');
+            setTimeout(() => flashEffect.classList.remove('trigger-flash'), 500);
+
+            const canvas = document.getElementById('canvas');
+            const targetWidth = 1080;
+            const targetHeight = 1920;
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
+            const ctx = canvas.getContext('2d');
+
+            ctx.save();
+            if (useFrontCamera) {
+                ctx.translate(targetWidth, 0);
+                ctx.scale(-1, 1);
+            }
+            
+            const vRatio = video.videoWidth / video.videoHeight;
+            const tRatio = targetWidth / targetHeight;
+            let sWidth = video.videoWidth;
+            let sHeight = video.videoHeight;
+            let sX = 0, sY = 0;
+
+            if (vRatio > tRatio) {
+                sWidth = video.videoHeight * tRatio;
+                sX = (video.videoWidth - sWidth) / 2;
+            } else {
+                sHeight = video.videoWidth / tRatio;
+                sY = (video.videoHeight - sHeight) / 2;
+            }
+
+            ctx.drawImage(video, sX, sY, sWidth, sHeight, 0, 0, targetWidth, targetHeight);
+            ctx.restore();
+
+            const frameImg = new Image();
+            frameImg.crossOrigin = "anonymous";
+            frameImg.src = frameSources[selectedFrameIndex];
+            
+            frameImg.onload = () => {
+                ctx.drawImage(frameImg, 0, 0, targetWidth, targetHeight);
+                
+                resultImage.src = canvas.toDataURL('image/png');
+                canvas.toBlob((blob) => {
+                    currentBlob = blob;
+                }, 'image/png');
+
+                previewContainer.style.display = 'block';
+                cameraActions.style.display = 'none';
+                previewActions.style.display = 'flex';
+            };
+        }
+
+        function retakePhoto() {
+            previewContainer.style.display = 'none';
+            cameraActions.style.display = 'flex';
+            previewActions.style.display = 'none';
+            currentBlob = null;
+        }
+
+        async function shareOrSavePhoto() {
+            if (!currentBlob) return;
+
+            const file = new File([currentBlob], 'tifoso-photo.png', { type: 'image/png' });
+
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                try {
+                    await navigator.share({
+                        files: [file],
+                        title: 'Matchday Photo Boot',
+                        text: 'HSVarese è la mia squadra del cuore! 🏀🤍❤️🏀 #ASDHandicapSportVarese #ForzaVarese #WheelchairBasketball #Matchday'
+                    });
+                } catch (err) {
+                    if (err.name !== 'AbortError') {
+                        fallbackDownload();
+                    }
+                }
+            } else {
+                fallbackDownload();
+            }
+        }
+
+        function fallbackDownload() {
+            const link = document.createElement('a');
+            link.download = 'tifoso-photo.png';
+            link.href = resultImage.src;
+            link.click();
+        }
+
+        initCamera();
+    </script>
+</body>
+</html>
